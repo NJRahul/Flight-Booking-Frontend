@@ -197,7 +197,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="max-w-5xl">
+      <div className="w-full">
         <div className="lg:grid lg:grid-cols-4 gap-6">
           <div className="card p-6 h-64 animate-pulse bg-gray-100 lg:col-span-1" />
           <div className="card p-6 h-96 animate-pulse bg-gray-100 lg:col-span-3 mt-5 lg:mt-0" />
@@ -207,7 +207,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-5xl">
+    <div className="w-full">
       <div className="lg:grid lg:grid-cols-4 gap-6 space-y-5 lg:space-y-0">
         {/* Sidebar */}
         <div className="lg:col-span-1 card p-6 text-center space-y-3 h-fit">

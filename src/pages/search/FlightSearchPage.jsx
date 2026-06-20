@@ -3,9 +3,10 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ChevronDown, ChevronUp, SlidersHorizontal, X, Plane, Clock, Wifi,
-  Utensils, Monitor, Zap, Luggage, RefreshCw, Info, ArrowRight, Filter
+  Utensils, Monitor, Zap, Luggage, RefreshCw, Info, ArrowRight, Filter, Heart
 } from 'lucide-react';
-import { flightApi } from '../../api/axios';
+import { flightApi, savedSearchApi } from '../../api/axios';
+import { useAuthStore } from '../../store/useAuthStore';
 import { QUERY_KEYS } from '../../utils/constants';
 import { formatCurrency, formatDate, formatDuration, formatTime } from '../../utils/formatters';
 import SeatClassBadge from '../../components/search/SeatClassBadge';
@@ -349,6 +350,7 @@ const FilterPanel = ({ filters, onChange, stats, onReset }) => {
 const FlightSearchPage = () => {
   const [urlParams] = useSearchParams();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuthStore();
   const [showFullSearch, setShowFullSearch] = useState(false);
   const [sortBy, setSortBy] = useState('price_asc');
   const [page, setPage] = useState(1);
@@ -496,6 +498,41 @@ const FlightSearchPage = () => {
 
   const toggleCard = (id) => setExpandedCard((prev) => (prev === id ? null : id));
 
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSaveSearch = async () => {
+    if (!isAuthenticated) { navigate('/login'); return; }
+    if (!from || !to || !departureDate) return;
+    setSaving(true);
+    try {
+      await savedSearchApi.post('/', {
+        from, to,
+        fromCity: searchConfig.fromCity,
+        toCity: searchConfig.toCity,
+        departureDate,
+        returnDate: searchConfig.returnDate || undefined,
+        adults,
+        children,
+        infants: searchConfig.infants,
+        class: seatClass,
+        tripType: searchConfig.tripType,
+        label: `${searchConfig.fromCity || from} → ${searchConfig.toCity || to}`,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      // silently ignore duplicates
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Reset saved state on search change
+  useEffect(() => { setSaved(false); }, [from, to, departureDate, seatClass]);
+
   const passengers = { adults, children, infants: searchConfig.infants };
 
   // Empty state
@@ -537,6 +574,17 @@ const FlightSearchPage = () => {
               <button onClick={() => setShowMobileFilters(true)} className="lg:hidden btn-secondary text-xs px-3 py-1.5 flex items-center gap-1">
                 <Filter className="w-3.5 h-3.5" /> Filters
               </button>
+              {from && to && departureDate && (
+                <button
+                  onClick={handleSaveSearch}
+                  disabled={saving}
+                  title={saved ? 'Saved!' : 'Save this search'}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-all ${saved ? 'border-red-300 text-red-500 bg-red-50' : 'border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50'}`}
+                >
+                  <Heart className={`w-4 h-4 ${saved ? 'fill-current' : ''}`} />
+                  <span className="hidden sm:inline">{saved ? 'Saved' : 'Save'}</span>
+                </button>
+              )}
               <button onClick={() => setShowFullSearch(true)} className="btn-secondary text-sm px-4 py-2">Modify Search</button>
             </div>
           </div>

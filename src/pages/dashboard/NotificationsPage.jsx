@@ -80,7 +80,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4 w-full">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">

@@ -153,7 +153,7 @@ export default function MyBookingsPage() {
   };
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="space-y-5 w-full">
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-navy-900">My Bookings</h1>

@@ -144,7 +144,7 @@ export default function BookingDetailPage() {
   };
 
   return (
-    <div className="max-w-5xl space-y-5">
+    <div className="w-full space-y-5">
       {/* Back */}
       <Link
         to="/dashboard/bookings"

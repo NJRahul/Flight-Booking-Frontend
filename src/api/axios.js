@@ -43,5 +43,6 @@ export const bookingApi = createAxiosInstance('/bookings');
 export const paymentApi = createAxiosInstance('/payments');
 export const adminApi = createAxiosInstance('/admin');
 export const notificationApi = createAxiosInstance('/notifications');
+export const savedSearchApi = createAxiosInstance('/saved-searches');
 
 export default createAxiosInstance();

@@ -37,6 +37,7 @@ import MyBookingsPage from './pages/dashboard/MyBookingsPage';
 import BookingDetailPage from './pages/dashboard/BookingDetailPage';
 import ProfilePage from './pages/dashboard/ProfilePage';
 import NotificationsPage from './pages/dashboard/NotificationsPage';
+import SavedSearchesPage from './pages/dashboard/SavedSearchesPage';
 
 // Auth pages (Module 2)
 import LoginPage from './pages/auth/LoginPage';
@@ -96,7 +97,7 @@ const App = () => {
                 <Route path="bookings/:id" element={<BookingDetailPage />} />
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="notifications" element={<NotificationsPage />} />
-                <Route path="saved" element={<ComingSoon title="Saved Searches" />} />
+                <Route path="saved" element={<SavedSearchesPage />} />
               </Route>
             </Route>
 

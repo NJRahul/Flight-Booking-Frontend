@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { format, isAfter, parseISO } from 'date-fns';
+import { format, isAfter } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   Calendar, Plane, CreditCard, TrendingUp, Search, List, User as UserIcon, Headphones,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { bookingApi } from '../../api/axios';
+import { useNotificationStore } from '../../store/useNotificationStore';
 
 const STATUS_STYLES = {
   confirmed: 'bg-green-100 text-green-700',
@@ -16,16 +17,32 @@ const STATUS_STYLES = {
   completed: 'bg-gray-100 text-gray-600',
 };
 
+const BOOKING_EVENTS = new Set(['payment_success', 'booking_confirmed', 'booking_cancelled', 'booking_updated']);
+
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { notifications } = useNotificationStore();
+  const debounceRef = useRef(null);
 
-  useEffect(() => {
+  const fetchBookings = useCallback(() => {
     bookingApi.get('/').then(r => {
       setBookings(r.data.data?.bookings || r.data.data || []);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchBookings(); }, [fetchBookings]);
+
+  // Watch notification store — re-fetch bookings when a booking-related notification arrives
+  const latestNotification = notifications[0];
+  useEffect(() => {
+    if (!latestNotification) return;
+    if (!BOOKING_EVENTS.has(latestNotification.type)) return;
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(fetchBookings, 1500);
+    return () => clearTimeout(debounceRef.current);
+  }, [latestNotification, fetchBookings]);
 
   const now = new Date();
   const upcomingBookings = bookings.filter(b =>

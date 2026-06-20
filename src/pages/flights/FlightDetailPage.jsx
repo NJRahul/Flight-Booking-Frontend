@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import {
   Plane, Clock, MapPin, ChevronRight, Loader2, Wifi,
-  Utensils, Monitor, Zap, Luggage, Shield, Check, X,
+  Utensils, Monitor, Zap, Luggage, Shield, Check, X, BarChart2,
 } from 'lucide-react';
 import { flightApi } from '../../api/axios';
 import { useBookingStore } from '../../store/useBookingStore';
@@ -422,6 +422,155 @@ const FlightDetailPage = () => {
                     </table>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* ── Class Price Comparison ── */}
+            <div className="card">
+              <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <BarChart2 className="w-4 h-4 text-primary-500" />
+                Compare Seat Classes
+              </h2>
+              <div className="overflow-x-auto -mx-1">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr>
+                      <th className="text-left px-3 py-2 text-gray-500 font-medium w-36" />
+                      {classOptions.map(({ key, label }) => {
+                        const isSelected = seatClass === key;
+                        return (
+                          <th key={key} className="px-3 py-2 text-center">
+                            <button
+                              onClick={() => handleClassChange(key)}
+                              className={`w-full rounded-xl px-3 py-2 font-semibold text-sm transition-all ${
+                                isSelected
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              {label}
+                              {isSelected && <span className="block text-xs font-normal opacity-80">Selected</span>}
+                            </button>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {/* Price */}
+                    <tr className="bg-primary-50/40">
+                      <td className="px-3 py-3 text-gray-600 font-medium">Price / person</td>
+                      {classOptions.map(({ key }) => {
+                        const price = flight.seats?.[key]?.price || 0;
+                        const isSelected = seatClass === key;
+                        return (
+                          <td key={key} className="px-3 py-3 text-center">
+                            <span className={`font-bold text-base ${isSelected ? 'text-primary-700' : 'text-gray-800'}`}>
+                              {fmt(price)}
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* Seats left */}
+                    <tr>
+                      <td className="px-3 py-3 text-gray-600 font-medium">Seats left</td>
+                      {classOptions.map(({ key }) => {
+                        const available = flight.seats?.[key]?.available ?? flight.seats?.[key]?.availableSeats ?? 0;
+                        return (
+                          <td key={key} className="px-3 py-3 text-center">
+                            <span className={`text-sm font-semibold ${available < 5 ? 'text-danger-600' : available < 10 ? 'text-warning-600' : 'text-success-600'}`}>
+                              {available}
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* Cabin baggage */}
+                    <tr>
+                      <td className="px-3 py-3 text-gray-600 font-medium">Cabin baggage</td>
+                      {classOptions.map(({ key }) => {
+                        const allowance = key === 'economy' ? '7 kg' : key === 'business' ? '10 kg' : '15 kg';
+                        return (
+                          <td key={key} className="px-3 py-3 text-center text-gray-700 text-sm">{allowance}</td>
+                        );
+                      })}
+                    </tr>
+                    {/* Check-in baggage */}
+                    <tr>
+                      <td className="px-3 py-3 text-gray-600 font-medium">Check-in bag</td>
+                      {classOptions.map(({ key }) => {
+                        const allowance = key === 'economy' ? `${baggage.checked || 15} kg` : key === 'business' ? '32 kg' : '40 kg';
+                        return (
+                          <td key={key} className="px-3 py-3 text-center text-gray-700 text-sm">{allowance}</td>
+                        );
+                      })}
+                    </tr>
+                    {/* Meals */}
+                    <tr>
+                      <td className="px-3 py-3 text-gray-600 font-medium">Meals</td>
+                      {classOptions.map(({ key }) => {
+                        const hasMeals = key !== 'economy' ? true : !!amenities.meals;
+                        return (
+                          <td key={key} className="px-3 py-3 text-center">
+                            {hasMeals
+                              ? <Check className="w-4 h-4 text-success-500 mx-auto" />
+                              : <X className="w-4 h-4 text-gray-300 mx-auto" />}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* Wi-Fi */}
+                    <tr>
+                      <td className="px-3 py-3 text-gray-600 font-medium">Wi-Fi</td>
+                      {classOptions.map(({ key }) => {
+                        const hasWifi = key === 'first' ? true : (key === 'business' ? true : !!amenities.wifi);
+                        return (
+                          <td key={key} className="px-3 py-3 text-center">
+                            {hasWifi
+                              ? <Check className="w-4 h-4 text-success-500 mx-auto" />
+                              : <X className="w-4 h-4 text-gray-300 mx-auto" />}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {/* Seat width */}
+                    <tr>
+                      <td className="px-3 py-3 text-gray-600 font-medium">Seat type</td>
+                      {classOptions.map(({ key }) => {
+                        const type = key === 'economy' ? 'Standard' : key === 'business' ? 'Lie-flat' : 'Private Suite';
+                        return (
+                          <td key={key} className="px-3 py-3 text-center text-gray-700 text-sm">{type}</td>
+                        );
+                      })}
+                    </tr>
+                    {/* Select row */}
+                    <tr>
+                      <td className="px-3 py-3" />
+                      {classOptions.map(({ key, label }) => {
+                        const isSelected = seatClass === key;
+                        const available = flight.seats?.[key]?.available ?? flight.seats?.[key]?.availableSeats ?? 0;
+                        return (
+                          <td key={key} className="px-3 py-3 text-center">
+                            <button
+                              onClick={() => handleClassChange(key)}
+                              disabled={available === 0}
+                              className={`text-xs px-4 py-1.5 rounded-lg font-semibold transition-all ${
+                                available === 0
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : isSelected
+                                    ? 'bg-primary-600 text-white'
+                                    : 'border border-primary-500 text-primary-600 hover:bg-primary-50'
+                              }`}
+                            >
+                              {available === 0 ? 'Sold Out' : isSelected ? 'Selected' : 'Select'}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 

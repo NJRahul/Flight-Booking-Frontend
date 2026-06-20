@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
 import { Loader2, Plane, Users, MessageCircle, ChevronLeft } from 'lucide-react';
-import { flightApi, bookingApi } from '../../api/axios';
+import { flightApi, bookingApi, authApi } from '../../api/axios';
 import { useBookingStore } from '../../store/useBookingStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import BookingStepIndicator from '../../components/booking/BookingStepIndicator';
@@ -93,7 +93,7 @@ const StepTraveller = ({ onNext }) => {
   const [errors, setErrors] = useState({});
   const [showEmergency, setShowEmergency] = useState(false);
 
-  // Pre-fill email from auth user
+  // Fallback: if profile fetch didn't run yet, at least fill email from auth store
   useEffect(() => {
     if (user?.email && !contactInfo.email) {
       setContactInfo({ ...contactInfo, email: user.email });
@@ -570,11 +570,44 @@ const BookingPage = () => {
     setSeatClass,
     setSearchParams: storeSearchParams,
     initPassengers,
+    updatePassenger,
+    setContactInfo,
     computeTotal,
   } = useBookingStore();
 
   const [pageLoading, setPageLoading] = useState(!flight);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const prefillFromProfile = (profile) => {
+    if (!profile) return;
+    const nameParts = (profile.name || '').trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    const title = profile.gender === 'female' ? 'Ms' : 'Mr';
+    const fmtDate = (d) => { try { return format(parseISO(d), 'yyyy-MM-dd'); } catch { return ''; } };
+
+    updatePassenger(0, {
+      firstName,
+      lastName,
+      title,
+      gender: profile.gender || 'male',
+      nationality: profile.nationality || 'Indian',
+      dateOfBirth: profile.dateOfBirth ? fmtDate(profile.dateOfBirth) : '',
+      passportNumber: profile.passportNumber || '',
+      passportExpiry: profile.passportExpiry ? fmtDate(profile.passportExpiry) : '',
+      mealPreference: profile.preferences?.mealPreference || 'standard',
+    });
+
+    const phone = (profile.phone || '').replace(/^\+91\s?/, '').replace(/\s/g, '');
+    setContactInfo({
+      email: profile.email || '',
+      phone,
+      emergencyContact: {
+        name: profile.emergencyContact?.name || '',
+        phone: profile.emergencyContact?.phone || '',
+      },
+    });
+  };
 
   // Initialise store (handles direct URL access)
   useEffect(() => {
@@ -597,13 +630,17 @@ const BookingPage = () => {
           setPageLoading(false);
         }
       } else {
-        // Flight already in store but re-init passengers if needed
         if (passengers.length === 0) initPassengers(adults, children, infants);
         setPageLoading(false);
       }
 
-      // Always reset to step 0 when entering booking page
       setStep(0);
+
+      // Pre-fill first passenger + contact info from saved profile
+      authApi.get('/me').then(r => {
+        const profile = r.data.data?.user || r.data.user;
+        if (profile) prefillFromProfile(profile);
+      }).catch(() => {});
     };
 
     init();

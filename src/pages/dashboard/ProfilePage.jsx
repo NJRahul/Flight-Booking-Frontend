@@ -67,8 +67,12 @@ export default function ProfilePage() {
     authApi.get('/me').then(r => {
       const u = r.data.data?.user || r.data.user;
       setProfileData(u);
-    }).catch(() => toast.error('Failed to load profile')).finally(() => setLoading(false));
-  }, []);
+    }).catch(() => {
+      // Fall back to auth store data so form isn't blank
+      if (user) setProfileData(user);
+      else toast.error('Failed to load profile');
+    }).finally(() => setLoading(false));
+  }, [user]);
 
   useEffect(() => {
     if (!profileData) return;
@@ -225,7 +229,7 @@ export default function ProfilePage() {
               )}
             </div>
             <p className="text-xs text-gray-400 mt-1">
-              Member since {format(new Date(profileData?.createdAt || user?.createdAt || Date.now()), 'MMMM yyyy')}
+              Member since {format(new Date(profileData?.createdAt || Date.now()), 'MMMM yyyy')}
             </p>
             <p className="text-sm font-semibold text-primary-600 mt-1">0 Frequent Flyer Points</p>
           </div>

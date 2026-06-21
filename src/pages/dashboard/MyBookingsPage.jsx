@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format, isAfter, isPast, differenceInHours } from 'date-fns';
-import { Search, Download, X, ChevronDown, Plane, AlertTriangle } from 'lucide-react';
+import { Search, Download, X, ChevronDown, Plane, AlertTriangle, ArrowLeftRight } from 'lucide-react';
 import { bookingApi } from '../../api/axios';
 import toast from 'react-hot-toast';
 
@@ -268,11 +268,24 @@ export default function MyBookingsPage() {
                   </div>
 
                   {/* Route */}
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-lg font-bold text-navy-900">{depCity}</span>
-                    <Plane className="w-4 h-4 text-primary-500 rotate-90" />
+                    {b.tripType === 'round-trip' ? (
+                      <ArrowLeftRight className="w-4 h-4 text-primary-500" />
+                    ) : (
+                      <Plane className="w-4 h-4 text-primary-500 rotate-90" />
+                    )}
                     <span className="text-lg font-bold text-navy-900">{arrCity}</span>
+                    {b.tripType === 'round-trip' && (
+                      <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full font-medium">Round Trip</span>
+                    )}
                   </div>
+                  {b.tripType === 'round-trip' && b.returnFlight && (
+                    <div className="text-xs text-gray-400 mb-1">
+                      Return: {b.returnFlight.origin?.city || b.returnFlight.origin?.code} → {b.returnFlight.destination?.city || b.returnFlight.destination?.code}
+                      {b.returnFlight.departureTime && ` · ${format(new Date(b.returnFlight.departureTime), 'dd MMM, HH:mm')}`}
+                    </div>
+                  )}
 
                   {/* Details row */}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 mb-3">

@@ -3,6 +3,7 @@ import { create } from 'zustand';
 export const useBookingStore = create((set, get) => ({
   // Flight + class selection
   flight: null,
+  returnFlight: null,
   seatClass: 'economy',
 
   // Seat map selection
@@ -34,6 +35,7 @@ export const useBookingStore = create((set, get) => ({
 
   // Actions
   setFlight: (flight) => set({ flight }),
+  setReturnFlight: (returnFlight) => set({ returnFlight }),
   setSeatClass: (seatClass) => set({ seatClass }),
   setSelectedSeats: (selectedSeats) => set({ selectedSeats }),
   setPassengers: (passengers) => set({ passengers }),
@@ -103,9 +105,9 @@ export const useBookingStore = create((set, get) => ({
     set({ passengers, searchParams: { adults, children, infants } });
   },
 
-  // Compute total price
+  // Compute total price (includes return flight if present)
   computeTotal: () => {
-    const { flight, seatClass, passengers, extras } = get();
+    const { flight, returnFlight, seatClass, passengers, extras } = get();
     if (!flight)
       return {
         baseTotal: 0,
@@ -116,9 +118,12 @@ export const useBookingStore = create((set, get) => ({
         totalAmount: 99,
         passengers: [],
         baseFare: 0,
+        returnBaseFare: 0,
       };
 
     const baseFare = flight.seats?.[seatClass]?.price || 0;
+    const returnBaseFare = returnFlight?.seats?.[seatClass]?.price || 0;
+
     const EXTRAS_PRICING = {
       extraBaggage: 1299,
       travelInsurance: 499,
@@ -131,18 +136,20 @@ export const useBookingStore = create((set, get) => ({
 
     let baseTotal = 0;
     passengers.forEach((p) => {
-      if (p.type === 'adult') baseTotal += baseFare;
-      else if (p.type === 'child') baseTotal += Math.round(baseFare * 0.75);
-      else baseTotal += Math.round(baseFare * 0.1);
+      const outFare = p.type === 'adult' ? baseFare : p.type === 'child' ? Math.round(baseFare * 0.75) : Math.round(baseFare * 0.1);
+      const retFare = returnBaseFare > 0
+        ? (p.type === 'adult' ? returnBaseFare : p.type === 'child' ? Math.round(returnBaseFare * 0.75) : Math.round(returnBaseFare * 0.1))
+        : 0;
+      baseTotal += outFare + retFare;
     });
 
     const taxableBase = passengers
       .filter((p) => p.type !== 'infant')
-      .reduce(
-        (s, p) =>
-          s + (p.type === 'adult' ? baseFare : Math.round(baseFare * 0.75)),
-        0
-      );
+      .reduce((s, p) => {
+        const outFare = p.type === 'adult' ? baseFare : Math.round(baseFare * 0.75);
+        const retFare = returnBaseFare > 0 ? (p.type === 'adult' ? returnBaseFare : Math.round(returnBaseFare * 0.75)) : 0;
+        return s + outFare + retFare;
+      }, 0);
 
     const taxes = Math.round(taxableBase * TAX_RATE);
     const fuelSurcharge = Math.round(taxableBase * FUEL_RATE);
@@ -162,12 +169,14 @@ export const useBookingStore = create((set, get) => ({
       totalAmount,
       passengers,
       baseFare,
+      returnBaseFare,
     };
   },
 
   reset: () =>
     set({
       flight: null,
+      returnFlight: null,
       seatClass: 'economy',
       selectedSeats: [],
       passengers: [],

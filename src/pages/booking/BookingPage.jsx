@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
-import { Loader2, Plane, Users, MessageCircle, ChevronLeft } from 'lucide-react';
+import { Loader2, Plane, Users, MessageCircle, ChevronLeft, ArrowLeftRight } from 'lucide-react';
 import { flightApi, bookingApi, authApi } from '../../api/axios';
 import { useBookingStore } from '../../store/useBookingStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -53,15 +53,14 @@ const EXTRAS_CONFIG = [
 ];
 
 // ─── FlightSummaryBar (sidebar compact card) ───────────────────────────────
-const FlightSummaryBar = ({ flight, seatClass }) => {
+const FlightLeg = ({ flight, label, seatClass }) => {
   if (!flight) return null;
   const airline = flight.airline || {};
   const originCode = flight.origin?.code || '---';
   const destCode = flight.destination?.code || '---';
-  const depTime = flight.departureTime;
-  const arrTime = flight.arrivalTime;
   return (
     <div className="bg-gray-50 rounded-xl p-3 space-y-1">
+      {label && <p className="text-xs font-bold text-primary-600 uppercase tracking-wide mb-1">{label}</p>}
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-full bg-primary-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
           {(airline.code || 'AI').slice(0, 2)}
@@ -76,9 +75,29 @@ const FlightSummaryBar = ({ flight, seatClass }) => {
         <Plane className="w-3 h-3 text-primary-400" />
         <span>{destCode}</span>
       </div>
-      <p className="text-xs text-gray-500">{fmtDate(depTime)}</p>
-      <p className="text-xs text-gray-500">{fmtTime(depTime)} – {fmtTime(arrTime)}</p>
+      <p className="text-xs text-gray-500">{fmtDate(flight.departureTime)}</p>
+      <p className="text-xs text-gray-500">{fmtTime(flight.departureTime)} – {fmtTime(flight.arrivalTime)}</p>
       <p className="text-xs text-gray-500 capitalize">{seatClass} Class</p>
+    </div>
+  );
+};
+
+const FlightSummaryBar = ({ flight, returnFlight, seatClass }) => {
+  if (!flight) return null;
+  const isRoundTrip = !!returnFlight;
+  return (
+    <div className="space-y-2">
+      <FlightLeg flight={flight} seatClass={seatClass} label={isRoundTrip ? 'Outbound' : null} />
+      {isRoundTrip && (
+        <>
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <div className="flex-1 h-px bg-gray-200" />
+            <ArrowLeftRight className="w-3 h-3 shrink-0" />
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+          <FlightLeg flight={returnFlight} seatClass={seatClass} label="Return" />
+        </>
+      )}
     </div>
   );
 };
@@ -348,7 +367,7 @@ const StepExtras = ({ onNext, onBack }) => {
 
 // ─── Step 2: Review ────────────────────────────────────────────────────────
 const StepReview = ({ onNext, onBack, isSubmitting }) => {
-  const { flight, seatClass, passengers, contactInfo, extras, selectedSeats, computeTotal } = useBookingStore();
+  const { flight, returnFlight, seatClass, passengers, contactInfo, extras, selectedSeats, computeTotal } = useBookingStore();
   const [agreed, setAgreed] = useState(false);
 
   const pricing = computeTotal();
@@ -375,7 +394,7 @@ const StepReview = ({ onNext, onBack, isSubmitting }) => {
       {/* Flight Details */}
       <div className="card mb-0">
         <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <Plane className="w-4 h-4 text-primary-500" /> Flight Details
+          <Plane className="w-4 h-4 text-primary-500" /> {returnFlight ? 'Outbound Flight' : 'Flight Details'}
         </h3>
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
           <span><span className="text-gray-500">Airline:</span> {airline.name || '--'}</span>
@@ -395,6 +414,24 @@ const StepReview = ({ onNext, onBack, isSubmitting }) => {
             <span><span className="text-gray-500">Seats:</span> {selectedSeats.join(', ')}</span>
           )}
         </div>
+        {returnFlight && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <Plane className="w-4 h-4 text-primary-500 rotate-180" /> Return Flight
+            </h3>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
+              <span><span className="text-gray-500">Airline:</span> {returnFlight.airline?.name || '--'}</span>
+              <span>
+                <span className="text-gray-500">Route:</span>{' '}
+                {returnFlight.origin?.city ? `${returnFlight.origin.city} (${returnFlight.origin?.code})` : returnFlight.origin?.code}
+                {' → '}
+                {returnFlight.destination?.city ? `${returnFlight.destination.city} (${returnFlight.destination?.code})` : returnFlight.destination?.code}
+              </span>
+              <span><span className="text-gray-500">Date:</span> {fmtDate(returnFlight.departureTime)}</span>
+              <span><span className="text-gray-500">Time:</span> {fmtTime(returnFlight.departureTime)} – {fmtTime(returnFlight.arrivalTime)}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Passengers */}
@@ -554,9 +591,11 @@ const BookingPage = () => {
   const children = parseInt(searchParams.get('children') || '0', 10);
   const infants = parseInt(searchParams.get('infants') || '0', 10);
   const tripType = searchParams.get('tripType') || 'one-way';
+  const returnFlightId = searchParams.get('returnFlightId') || null;
 
   const {
     flight,
+    returnFlight,
     seatClass,
     passengers,
     contactInfo,
@@ -567,6 +606,7 @@ const BookingPage = () => {
     prevStep,
     setStep,
     setFlight,
+    setReturnFlight,
     setSeatClass,
     setSearchParams: storeSearchParams,
     initPassengers,
@@ -618,10 +658,18 @@ const BookingPage = () => {
       if (!flight || flight._id !== flightId) {
         try {
           setPageLoading(true);
-          const res = await flightApi.get(`/${flightId}`, { params: { class: seatClassParam } });
-          const data = res.data?.data || res.data;
-          const f = data.flight || data;
-          setFlight(f);
+          const [outRes, retRes] = await Promise.all([
+            flightApi.get(`/${flightId}`, { params: { class: seatClassParam } }),
+            returnFlightId ? flightApi.get(`/${returnFlightId}`, { params: { class: seatClassParam } }) : Promise.resolve(null),
+          ]);
+          const outData = outRes.data?.data || outRes.data;
+          setFlight(outData.flight || outData);
+          if (retRes) {
+            const retData = retRes.data?.data || retRes.data;
+            setReturnFlight(retData.flight || retData);
+          } else {
+            setReturnFlight(null);
+          }
           initPassengers(adults, children, infants);
         } catch (err) {
           toast.error('Failed to load flight. Please try again.');
@@ -630,6 +678,11 @@ const BookingPage = () => {
           setPageLoading(false);
         }
       } else {
+        if (returnFlightId && (!returnFlight || returnFlight._id !== returnFlightId)) {
+          flightApi.get(`/${returnFlightId}`, { params: { class: seatClassParam } })
+            .then(r => { const d = r.data?.data || r.data; setReturnFlight(d.flight || d); })
+            .catch(() => {});
+        }
         if (passengers.length === 0) initPassengers(adults, children, infants);
         setPageLoading(false);
       }
@@ -651,6 +704,7 @@ const BookingPage = () => {
       setIsSubmitting(true);
       const payload = {
         flightId: flight._id || flightId,
+        ...(returnFlightId ? { returnFlightId } : {}),
         tripType,
         class: seatClass,
         passengers: passengers.map((p, i) => ({
@@ -732,7 +786,7 @@ const BookingPage = () => {
           <div className="hidden lg:block w-72 shrink-0 sticky top-20 space-y-4">
             <div className="card space-y-4">
               <h3 className="text-sm font-semibold text-gray-700">Your Booking</h3>
-              <FlightSummaryBar flight={flight} seatClass={seatClass} />
+              <FlightSummaryBar flight={flight} returnFlight={returnFlight} seatClass={seatClass} />
               <PriceBreakdown pricing={pricing} />
             </div>
 

@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { format, differenceInHours } from 'date-fns';
 import {
   ArrowLeft, CheckCircle, Clock, XCircle, Download, Share2, Plane,
-  Users, CreditCard, Package, AlertTriangle, X,
+  Users, CreditCard, Package, AlertTriangle, X, ArrowLeftRight,
 } from 'lucide-react';
 import { bookingApi } from '../../api/axios';
 import toast from 'react-hot-toast';
@@ -188,7 +188,13 @@ export default function BookingDetailPage() {
             </div>
 
             {/* Route Visual */}
-            <div className="flex items-center gap-4 my-5 p-4 bg-gray-50 rounded-xl">
+            {booking.tripType === 'round-trip' && (
+              <div className="flex items-center gap-2 mb-2">
+                <ArrowLeftRight className="w-4 h-4 text-primary-600" />
+                <span className="text-xs font-semibold text-primary-600 uppercase tracking-wide">Round Trip</span>
+              </div>
+            )}
+            <div className="flex items-center gap-4 my-3 p-4 bg-gray-50 rounded-xl">
               <div className="text-center min-w-0">
                 <p className="text-2xl font-bold text-navy-900">
                   {booking.flight?.origin?.code || '—'}
@@ -222,6 +228,42 @@ export default function BookingDetailPage() {
                 </p>
               </div>
             </div>
+
+            {/* Return flight leg */}
+            {booking.tripType === 'round-trip' && booking.returnFlight && (
+              <div className="flex items-center gap-4 p-4 bg-primary-50 rounded-xl border border-primary-100">
+                <div className="text-center min-w-0">
+                  <p className="text-2xl font-bold text-navy-900">
+                    {booking.returnFlight?.origin?.code || '—'}
+                  </p>
+                  <p className="text-sm text-gray-500 truncate">
+                    {booking.returnFlight?.origin?.city || '—'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-700 mt-0.5">
+                    {fmtDateTime(booking.returnFlight?.departureTime)}
+                  </p>
+                </div>
+                <div className="flex-1 flex flex-col items-center">
+                  <div className="flex items-center w-full">
+                    <div className="flex-1 h-px bg-primary-200" />
+                    <Plane className="w-4 h-4 text-primary-600 mx-2 rotate-90" />
+                    <div className="flex-1 h-px bg-primary-200" />
+                  </div>
+                  <p className="text-xs text-primary-500 mt-1.5 font-medium">Return · {booking.class} class</p>
+                </div>
+                <div className="text-center min-w-0">
+                  <p className="text-2xl font-bold text-navy-900">
+                    {booking.returnFlight?.destination?.code || '—'}
+                  </p>
+                  <p className="text-sm text-gray-500 truncate">
+                    {booking.returnFlight?.destination?.city || '—'}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-700 mt-0.5">
+                    {fmtDateTime(booking.returnFlight?.arrivalTime)}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Passengers */}

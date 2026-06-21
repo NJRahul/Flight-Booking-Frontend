@@ -1,9 +1,10 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ChevronDown, ChevronUp, SlidersHorizontal, X, Plane, Clock, Wifi,
-  Utensils, Monitor, Zap, Luggage, RefreshCw, Info, ArrowRight, Filter, Heart
+  Utensils, Monitor, Zap, Luggage, RefreshCw, Info, ArrowRight, Filter,
+  Heart, Check, ArrowLeftRight,
 } from 'lucide-react';
 import { flightApi, savedSearchApi } from '../../api/axios';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -93,7 +94,7 @@ const BestPickCard = ({ label, flight, seatClass, isActive, onClick }) => {
 
 const TABS = ['Fare Details', 'Baggage', 'Amenities', 'Cancellation'];
 
-const FlightResultCard = ({ flight, seatClass, passengers, isExpanded, onToggle, urlParams }) => {
+const FlightResultCard = ({ flight, seatClass, passengers, isExpanded, onToggle, urlParams, onSelect, selectLabel = 'Select' }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('Fare Details');
   const price = flight.totalPrice || flight.seats?.[seatClass]?.price || 0;
@@ -101,6 +102,14 @@ const FlightResultCard = ({ flight, seatClass, passengers, isExpanded, onToggle,
   const taxes = Math.round(price * 0.18);
   const airlineCode = flight.airline?.code || '';
   const color = getAirlineColor(airlineCode);
+
+  const handleSelect = () => {
+    if (onSelect) {
+      onSelect(flight);
+    } else {
+      navigate(`/flights/${flight._id}?${urlParams}`);
+    }
+  };
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -197,10 +206,10 @@ const FlightResultCard = ({ flight, seatClass, passengers, isExpanded, onToggle,
               <SeatClassBadge seatClass={seatClass} className="mt-1" />
             </div>
             <button
-              onClick={() => navigate(`/flights/${flight._id}?${urlParams}`)}
+              onClick={handleSelect}
               className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5 whitespace-nowrap"
             >
-              Select <ArrowRight className="w-3.5 h-3.5" />
+              {selectLabel} <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -357,6 +366,13 @@ const FlightSearchPage = () => {
   const [expandedCard, setExpandedCard] = useState(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
+  // Round trip state
+  const [selectedOutbound, setSelectedOutbound] = useState(null);
+  const [returnSortBy, setReturnSortBy] = useState('price_asc');
+  const [returnPage, setReturnPage] = useState(1);
+  const [returnExpandedCard, setReturnExpandedCard] = useState(null);
+  const returnSectionRef = useRef(null);
+
   const searchConfig = useMemo(() => ({
     from: urlParams.get('from'),
     fromCity: urlParams.get('fromCity'),
@@ -371,12 +387,21 @@ const FlightSearchPage = () => {
     tripType: urlParams.get('tripType') || 'one-way',
   }), [urlParams]);
 
+  const isRoundTrip = searchConfig.tripType === 'round-trip';
+
+  // Reset outbound selection when search changes
+  useEffect(() => {
+    setSelectedOutbound(null);
+    setReturnPage(1);
+  }, [urlParams.toString()]);
+
   const { from, to, fromCity, toCity, departureDate, adults, children, infants } = searchConfig;
   const seatClass = searchConfig.class;
   const totalPassengers = adults + children + infants;
   const compactLabel = [
     from && to ? `${fromCity || from} → ${toCity || to}` : '',
     departureDate ? formatDate(departureDate, 'd MMM') : '',
+    isRoundTrip && searchConfig.returnDate ? `Return ${formatDate(searchConfig.returnDate, 'd MMM')}` : '',
     `${totalPassengers} Adult${totalPassengers !== 1 ? 's' : ''}`,
     seatClass.charAt(0).toUpperCase() + seatClass.slice(1),
   ].filter(Boolean).join(' · ');
@@ -393,8 +418,9 @@ const FlightSearchPage = () => {
   });
 
   const allFlights = data?.outbound || [];
+  const allReturnFlights = data?.return || [];
 
-  // Compute stats from all flights
+  // Compute stats from outbound flights
   const stats = useMemo(() => {
     if (allFlights.length === 0) return { minPrice: 0, maxPrice: 50000, airlines: [], stopCounts: {}, maxDurationHours: 24 };
     const prices = allFlights.map((f) => f.totalPrice || f.seats?.[seatClass]?.price || 0).filter(Boolean);
@@ -424,7 +450,6 @@ const FlightSearchPage = () => {
     maxDurationHours: null,
   });
 
-  // Re-initialize price range when results arrive
   useEffect(() => {
     if (stats.maxPrice > 0) {
       setFilters((f) => ({ ...f, priceRange: [stats.minPrice, stats.maxPrice] }));
@@ -433,15 +458,13 @@ const FlightSearchPage = () => {
 
   const resetFilters = () => setFilters({ priceRange: [stats.minPrice, stats.maxPrice], stops: 'any', airlines: [], departureBands: [], maxDurationHours: null });
 
-  const filteredFlights = useMemo(() => {
-    let result = [...allFlights];
+  const applyFilters = (flights) => {
+    let result = [...flights];
     const [minP, maxP] = filters.priceRange;
-
     result = result.filter((f) => {
       const price = f.totalPrice || f.seats?.[seatClass]?.price || 0;
       return price >= minP && price <= maxP;
     });
-
     if (filters.stops !== 'any') {
       result = result.filter((f) => {
         const s = f.stops || 0;
@@ -449,26 +472,27 @@ const FlightSearchPage = () => {
         return s === parseInt(filters.stops);
       });
     }
-
     if (filters.airlines.length > 0) {
       result = result.filter((f) => filters.airlines.includes(f.airline?.code || ''));
     }
-
     if (filters.departureBands.length > 0) {
       result = result.filter((f) => {
         const h = new Date(f.departureTime).getHours();
         return filters.departureBands.some((id) => TIME_BANDS.find((b) => b.id === id)?.test(h));
       });
     }
-
     if (filters.maxDurationHours) {
       result = result.filter((f) => (f.duration || 0) <= filters.maxDurationHours * 60);
     }
+    return result;
+  };
 
-    result.sort((a, b) => {
+  const sortFlights = (flights, sort) => {
+    const sorted = [...flights];
+    sorted.sort((a, b) => {
       const aP = a.totalPrice || 0, bP = b.totalPrice || 0;
       const aD = a.duration || 0, bD = b.duration || 0;
-      switch (sortBy) {
+      switch (sort) {
         case 'price_asc': return aP - bP;
         case 'price_desc': return bP - aP;
         case 'duration_asc': return aD - bD;
@@ -477,9 +501,11 @@ const FlightSearchPage = () => {
         default: return aP - bP;
       }
     });
+    return sorted;
+  };
 
-    return result;
-  }, [allFlights, filters, sortBy, seatClass]);
+  const filteredFlights = useMemo(() => sortFlights(applyFilters(allFlights), sortBy), [allFlights, filters, sortBy, seatClass]);
+  const filteredReturnFlights = useMemo(() => sortFlights(applyFilters(allReturnFlights), returnSortBy), [allReturnFlights, filters, returnSortBy, seatClass]);
 
   const bestPicks = useMemo(() => {
     if (allFlights.length === 0) return null;
@@ -493,10 +519,43 @@ const FlightSearchPage = () => {
     return { cheapest: byPrice[0], fastest: byDuration[0], bestValue: byValue[0] };
   }, [allFlights]);
 
+  const returnBestPicks = useMemo(() => {
+    if (allReturnFlights.length === 0) return null;
+    const byPrice = [...allReturnFlights].sort((a, b) => (a.totalPrice || 0) - (b.totalPrice || 0));
+    const byDuration = [...allReturnFlights].sort((a, b) => (a.duration || 0) - (b.duration || 0));
+    const byValue = [...allReturnFlights].sort((a, b) => {
+      const ar = (a.totalPrice || 99999) / (a.duration || 1);
+      const br = (b.totalPrice || 99999) / (b.duration || 1);
+      return ar - br;
+    });
+    return { cheapest: byPrice[0], fastest: byDuration[0], bestValue: byValue[0] };
+  }, [allReturnFlights]);
+
   const totalPages = Math.ceil(filteredFlights.length / RESULTS_PER_PAGE);
   const paginatedFlights = filteredFlights.slice((page - 1) * RESULTS_PER_PAGE, page * RESULTS_PER_PAGE);
+  const returnTotalPages = Math.ceil(filteredReturnFlights.length / RESULTS_PER_PAGE);
+  const paginatedReturnFlights = filteredReturnFlights.slice((returnPage - 1) * RESULTS_PER_PAGE, returnPage * RESULTS_PER_PAGE);
 
   const toggleCard = (id) => setExpandedCard((prev) => (prev === id ? null : id));
+  const toggleReturnCard = (id) => setReturnExpandedCard((prev) => (prev === id ? null : id));
+
+  const handleOutboundSelect = (flight) => {
+    if (!isRoundTrip) {
+      navigate(`/flights/${flight._id}?${urlParams}`);
+      return;
+    }
+    setSelectedOutbound(flight);
+    setReturnPage(1);
+    setTimeout(() => {
+      returnSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  };
+
+  const handleReturnSelect = (returnFlight) => {
+    const params = new URLSearchParams(urlParams.toString());
+    params.set('returnFlightId', returnFlight._id);
+    navigate(`/book/${selectedOutbound._id}?${params.toString()}`);
+  };
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -522,7 +581,6 @@ const FlightSearchPage = () => {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch {
-      // silently ignore duplicates
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } finally {
@@ -530,13 +588,11 @@ const FlightSearchPage = () => {
     }
   };
 
-  // Reset saved state on search change
   useEffect(() => { setSaved(false); }, [from, to, departureDate, seatClass]);
 
   const passengers = { adults, children, infants: searchConfig.infants };
 
-  // Empty state
-  const EmptyState = () => (
+  const EmptyState = ({ onReset }) => (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mb-5">
         <Plane className="w-10 h-10 text-gray-300" />
@@ -544,11 +600,24 @@ const FlightSearchPage = () => {
       <h3 className="text-xl font-bold font-display text-navy-900 mb-2">No flights found</h3>
       <p className="text-gray-500 text-sm mb-6 max-w-xs">Try adjusting your filters or search for different dates to find available flights.</p>
       <div className="flex gap-3">
-        <button onClick={resetFilters} className="btn-secondary text-sm px-4 py-2">Clear Filters</button>
+        <button onClick={onReset} className="btn-secondary text-sm px-4 py-2">Clear Filters</button>
         <button onClick={() => setShowFullSearch(true)} className="btn-primary text-sm px-4 py-2">Modify Search</button>
       </div>
     </div>
   );
+
+  const Pagination = ({ page, totalPages, onPage }) => {
+    if (totalPages <= 1) return null;
+    return (
+      <div className="flex justify-center items-center gap-2 mt-6">
+        <button disabled={page === 1} onClick={() => onPage(p => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm disabled:opacity-40 hover:border-primary-300 transition-colors">←</button>
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+          <button key={p} onClick={() => onPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${page === p ? 'bg-primary-600 text-white' : 'border border-gray-200 hover:border-primary-300'}`}>{p}</button>
+        ))}
+        <button disabled={page === totalPages} onClick={() => onPage(p => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm disabled:opacity-40 hover:border-primary-300 transition-colors">→</button>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -569,6 +638,9 @@ const FlightSearchPage = () => {
             <div className="flex items-center gap-2 min-w-0">
               <Plane className="w-4 h-4 text-primary-600 shrink-0" />
               <span className="text-sm font-medium text-navy-900 truncate">{compactLabel}</span>
+              {isRoundTrip && (
+                <span className="shrink-0 text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full font-medium">Round Trip</span>
+              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={() => setShowMobileFilters(true)} className="lg:hidden btn-secondary text-xs px-3 py-1.5 flex items-center gap-1">
@@ -603,77 +675,171 @@ const FlightSearchPage = () => {
 
           {/* Results */}
           <main className="flex-1 min-w-0">
-            {/* Best picks */}
-            {!isLoading && bestPicks && allFlights.length > 0 && (
-              <div className="mb-5">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Best Picks</p>
-                <div className="flex gap-3 overflow-x-auto pb-1">
-                  <BestPickCard label="🏷️ Cheapest" flight={bestPicks.cheapest} seatClass={seatClass} onClick={() => navigate(`/flights/${bestPicks.cheapest._id}?${urlParams}`)} />
-                  <BestPickCard label="⚡ Fastest" flight={bestPicks.fastest} seatClass={seatClass} onClick={() => navigate(`/flights/${bestPicks.fastest._id}?${urlParams}`)} />
-                  <BestPickCard label="⭐ Best Value" flight={bestPicks.bestValue} seatClass={seatClass} onClick={() => navigate(`/flights/${bestPicks.bestValue._id}?${urlParams}`)} />
+
+            {/* ── Round-trip step indicator ── */}
+            {isRoundTrip && !isLoading && allFlights.length > 0 && (
+              <div className="flex items-center gap-3 mb-5">
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${selectedOutbound ? 'bg-green-100 text-green-700' : 'bg-primary-600 text-white'}`}>
+                  {selectedOutbound ? <Check className="w-3.5 h-3.5" /> : <span>1</span>}
+                  Select Outbound
+                </div>
+                <div className="flex-1 h-px bg-gray-200" />
+                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${selectedOutbound ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                  <span>2</span>
+                  Select Return
                 </div>
               </div>
             )}
 
-            {/* Sort bar */}
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-              <p className="text-sm text-gray-500">
-                {isLoading ? 'Searching…' : `Showing ${filteredFlights.length} of ${allFlights.length} flights`}
-              </p>
-              <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }} className="select-field w-auto text-sm py-2">
-                <option value="price_asc">Price: Low to High</option>
-                <option value="price_desc">Price: High to Low</option>
-                <option value="duration_asc">Shortest Duration</option>
-                <option value="departure_asc">Earliest Departure</option>
-                <option value="arrival_asc">Latest Arrival</option>
-              </select>
-            </div>
-
-            {/* Cards */}
-            {isLoading ? (
-              Array(5).fill(0).map((_, i) => <FlightCardSkeleton key={i} />)
-            ) : isError ? (
-              <div className="card text-center py-12">
-                <Info className="w-10 h-10 text-danger-400 mx-auto mb-3" />
-                <p className="text-navy-900 font-semibold mb-1">Search failed</p>
-                <p className="text-gray-500 text-sm mb-4">Unable to load flight results. Please try again.</p>
-                <button onClick={refetch} className="btn-primary px-5 py-2 flex items-center gap-2 mx-auto">
-                  <RefreshCw className="w-4 h-4" /> Retry
-                </button>
+            {/* ── Outbound: Best picks ── */}
+            {!isLoading && bestPicks && allFlights.length > 0 && !selectedOutbound && (
+              <div className="mb-5">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  {isRoundTrip ? 'Outbound — Best Picks' : 'Best Picks'}
+                </p>
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  <BestPickCard label="🏷️ Cheapest" flight={bestPicks.cheapest} seatClass={seatClass} onClick={() => handleOutboundSelect(bestPicks.cheapest)} />
+                  <BestPickCard label="⚡ Fastest" flight={bestPicks.fastest} seatClass={seatClass} onClick={() => handleOutboundSelect(bestPicks.fastest)} />
+                  <BestPickCard label="⭐ Best Value" flight={bestPicks.bestValue} seatClass={seatClass} onClick={() => handleOutboundSelect(bestPicks.bestValue)} />
+                </div>
               </div>
-            ) : filteredFlights.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <>
-                {paginatedFlights.map((flight) => (
-                  <FlightResultCard
-                    key={flight._id}
-                    flight={flight}
-                    seatClass={seatClass}
-                    passengers={passengers}
-                    isExpanded={expandedCard === flight._id}
-                    onToggle={() => toggleCard(flight._id)}
-                    urlParams={urlParams.toString()}
-                  />
-                ))}
+            )}
 
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex justify-center items-center gap-2 mt-6">
-                    <button disabled={page === 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm disabled:opacity-40 hover:border-primary-300 transition-colors">←</button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                      <button
-                        key={p}
-                        onClick={() => setPage(p)}
-                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${page === p ? 'bg-primary-600 text-white' : 'border border-gray-200 hover:border-primary-300'}`}
-                      >
-                        {p}
-                      </button>
-                    ))}
-                    <button disabled={page === totalPages} onClick={() => setPage((p) => p + 1)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm disabled:opacity-40 hover:border-primary-300 transition-colors">→</button>
+            {/* ── Sort bar ── */}
+            {!selectedOutbound && (
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <p className="text-sm text-gray-500">
+                  {isLoading ? 'Searching…' : `Showing ${filteredFlights.length} of ${allFlights.length} ${isRoundTrip ? 'outbound ' : ''}flights`}
+                </p>
+                <select value={sortBy} onChange={(e) => { setSortBy(e.target.value); setPage(1); }} className="select-field w-auto text-sm py-2">
+                  <option value="price_asc">Price: Low to High</option>
+                  <option value="price_desc">Price: High to Low</option>
+                  <option value="duration_asc">Shortest Duration</option>
+                  <option value="departure_asc">Earliest Departure</option>
+                  <option value="arrival_asc">Latest Arrival</option>
+                </select>
+              </div>
+            )}
+
+            {/* ── Outbound flight cards ── */}
+            {!selectedOutbound && (
+              <>
+                {isLoading ? (
+                  Array(5).fill(0).map((_, i) => <FlightCardSkeleton key={i} />)
+                ) : isError ? (
+                  <div className="card text-center py-12">
+                    <Info className="w-10 h-10 text-danger-400 mx-auto mb-3" />
+                    <p className="text-navy-900 font-semibold mb-1">Search failed</p>
+                    <p className="text-gray-500 text-sm mb-4">Unable to load flight results. Please try again.</p>
+                    <button onClick={refetch} className="btn-primary px-5 py-2 flex items-center gap-2 mx-auto">
+                      <RefreshCw className="w-4 h-4" /> Retry
+                    </button>
                   </div>
+                ) : filteredFlights.length === 0 ? (
+                  <EmptyState onReset={resetFilters} />
+                ) : (
+                  <>
+                    {paginatedFlights.map((flight) => (
+                      <FlightResultCard
+                        key={flight._id}
+                        flight={flight}
+                        seatClass={seatClass}
+                        passengers={passengers}
+                        isExpanded={expandedCard === flight._id}
+                        onToggle={() => toggleCard(flight._id)}
+                        urlParams={urlParams.toString()}
+                        onSelect={isRoundTrip ? handleOutboundSelect : undefined}
+                        selectLabel={isRoundTrip ? 'Select Outbound' : 'Select'}
+                      />
+                    ))}
+                    <Pagination page={page} totalPages={totalPages} onPage={setPage} />
+                  </>
                 )}
               </>
+            )}
+
+            {/* ── Return flight section ── */}
+            {isRoundTrip && selectedOutbound && (
+              <div ref={returnSectionRef}>
+                {/* Selected outbound confirmation */}
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Check className="w-4 h-4 text-green-600 shrink-0" />
+                      <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">Outbound Selected</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-800">
+                      <span className="font-semibold">{selectedOutbound.airline?.name}</span>
+                      <span className="text-gray-400">·</span>
+                      <span>{selectedOutbound.origin?.code} → {selectedOutbound.destination?.code}</span>
+                      <span className="text-gray-400">·</span>
+                      <span>{formatTime(selectedOutbound.departureTime)} – {formatTime(selectedOutbound.arrivalTime)}</span>
+                      <span className="text-gray-400">·</span>
+                      <span className="font-bold text-primary-700">
+                        {formatCurrency(selectedOutbound.totalPrice || selectedOutbound.seats?.[seatClass]?.price || 0)}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedOutbound(null)}
+                    className="text-xs text-green-700 hover:text-green-900 font-medium border border-green-300 px-3 py-1.5 rounded-lg hover:bg-green-100 transition-colors"
+                  >
+                    Change Outbound
+                  </button>
+                </div>
+
+                {/* Return best picks */}
+                {returnBestPicks && allReturnFlights.length > 0 && (
+                  <div className="mb-5">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Return — Best Picks</p>
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                      <BestPickCard label="🏷️ Cheapest" flight={returnBestPicks.cheapest} seatClass={seatClass} onClick={() => handleReturnSelect(returnBestPicks.cheapest)} />
+                      <BestPickCard label="⚡ Fastest" flight={returnBestPicks.fastest} seatClass={seatClass} onClick={() => handleReturnSelect(returnBestPicks.fastest)} />
+                      <BestPickCard label="⭐ Best Value" flight={returnBestPicks.bestValue} seatClass={seatClass} onClick={() => handleReturnSelect(returnBestPicks.bestValue)} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Return sort + count */}
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                  <p className="text-sm text-gray-500">
+                    {`${filteredReturnFlights.length} of ${allReturnFlights.length} return flights`}
+                  </p>
+                  <select value={returnSortBy} onChange={(e) => { setReturnSortBy(e.target.value); setReturnPage(1); }} className="select-field w-auto text-sm py-2">
+                    <option value="price_asc">Price: Low to High</option>
+                    <option value="price_desc">Price: High to Low</option>
+                    <option value="duration_asc">Shortest Duration</option>
+                    <option value="departure_asc">Earliest Departure</option>
+                    <option value="arrival_asc">Latest Arrival</option>
+                  </select>
+                </div>
+
+                {/* Return flight cards */}
+                {filteredReturnFlights.length === 0 ? (
+                  <div className="card text-center py-12">
+                    <ArrowLeftRight className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                    <p className="text-navy-900 font-semibold mb-1">No return flights found</p>
+                    <p className="text-gray-500 text-sm">Try adjusting your filters or return date.</p>
+                  </div>
+                ) : (
+                  <>
+                    {paginatedReturnFlights.map((flight) => (
+                      <FlightResultCard
+                        key={flight._id}
+                        flight={flight}
+                        seatClass={seatClass}
+                        passengers={passengers}
+                        isExpanded={returnExpandedCard === flight._id}
+                        onToggle={() => toggleReturnCard(flight._id)}
+                        urlParams={urlParams.toString()}
+                        onSelect={handleReturnSelect}
+                        selectLabel="Select Return"
+                      />
+                    ))}
+                    <Pagination page={returnPage} totalPages={returnTotalPages} onPage={setReturnPage} />
+                  </>
+                )}
+              </div>
             )}
           </main>
         </div>
@@ -694,7 +860,7 @@ const FlightSearchPage = () => {
               <FilterPanel filters={filters} onChange={setFilters} stats={stats} onReset={resetFilters} />
             </div>
             <div className="p-4 border-t border-gray-100">
-              <button onClick={() => setShowMobileFilters(false)} className="btn-primary w-full">Show {filteredFlights.length} Flights</button>
+              <button onClick={() => setShowMobileFilters(false)} className="btn-primary w-full">Show Flights</button>
             </div>
           </div>
         </div>

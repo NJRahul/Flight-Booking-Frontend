@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { flightApi } from '../../api/axios';
 import { useBookingStore } from '../../store/useBookingStore';
+import useSocket from '../../hooks/useSocket';
 import SeatMap from '../../components/booking/SeatMap';
 import RealTimeFlightStatus from '../../components/flight/RealTimeFlightStatus';
 
@@ -72,6 +73,9 @@ const FlightDetailPage = () => {
   const tripType = searchParams.get('tripType') || 'one-way';
 
   const [flight, setFlight] = useState(null);
+  // Live seat counts — overrides flight.seats[class].available from the API response.
+  // Updated in real-time via socket so the number always matches the seat map.
+  const [liveCounts, setLiveCounts] = useState(null);
   const [seatMap, setSeatMap] = useState([]);
   const [loading, setLoading] = useState(true);
   const [seatLoading, setSeatLoading] = useState(false);
@@ -88,6 +92,10 @@ const FlightDetailPage = () => {
     setSelectedSeats,
   } = useBookingStore();
 
+  const { socket, joinFlightRoom } = useSocket();
+  // Keep fetchSeats in a ref so the socket effect can call it without stale closures.
+  const fetchSeatsRef = useRef(null);
+
   // Initialise seat class from URL param on first load
   useEffect(() => {
     setSeatClass(seatClassParam);
@@ -100,9 +108,16 @@ const FlightDetailPage = () => {
       setError(null);
       const res = await flightApi.get(`/${id}`, { params: { class: seatClass } });
       const data = res.data?.data || res.data;
-      setFlight(data.flight || data);
+      const flightData = data.flight || data;
+      setFlight(flightData);
       setSeatMap(data.seatMap || []);
-      storeFlight(data.flight || data);
+      // Seed live counts from the API response (which already uses map-derived counts).
+      setLiveCounts({
+        economy: flightData.seats?.economy?.available ?? 0,
+        business: flightData.seats?.business?.available ?? 0,
+        first: flightData.seats?.first?.available ?? 0,
+      });
+      storeFlight(flightData);
       storeSearchParams({ adults, children, infants, tripType });
       initPassengers(adults, children, infants);
     } catch (err) {
@@ -124,12 +139,37 @@ const FlightDetailPage = () => {
       const res = await flightApi.get(`/${id}/seats`, { params: { class: cls } });
       const data = res.data?.data || res.data;
       setSeatMap(data.seatMap || data || []);
+      // getSeatMap now also returns availableCount — update just this class.
+      if (data.availableCount !== undefined) {
+        setLiveCounts((prev) => prev ? { ...prev, [cls]: data.availableCount } : prev);
+      }
     } catch {
       // non-critical; keep existing seat map
     } finally {
       setSeatLoading(false);
     }
   }, [id]);
+
+  // Keep ref in sync so the socket listener can call it without stale closures.
+  useEffect(() => {
+    fetchSeatsRef.current = fetchSeats;
+  }, [fetchSeats]);
+
+  // Join the flight's socket room and listen for real-time seat updates.
+  useEffect(() => {
+    if (!socket) return;
+    joinFlightRoom(id);
+
+    const onSeatsUpdate = ({ flightId, available }) => {
+      if (String(flightId) !== String(id)) return;
+      setLiveCounts(available);
+      // Refresh the seat map grid for whichever class is currently displayed.
+      fetchSeatsRef.current?.(seatClass);
+    };
+
+    socket.on('flight:seatsUpdate', onSeatsUpdate);
+    return () => socket.off('flight:seatsUpdate', onSeatsUpdate);
+  }, [socket, id, joinFlightRoom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClassChange = (cls) => {
     setSeatClass(cls);
@@ -476,7 +516,7 @@ const FlightDetailPage = () => {
                     <tr>
                       <td className="px-3 py-3 text-gray-600 font-medium">Seats left</td>
                       {classOptions.map(({ key }) => {
-                        const available = flight.seats?.[key]?.available ?? flight.seats?.[key]?.availableSeats ?? 0;
+                        const available = liveCounts?.[key] ?? flight.seats?.[key]?.available ?? 0;
                         return (
                           <td key={key} className="px-3 py-3 text-center">
                             <span className={`text-sm font-semibold ${available < 5 ? 'text-danger-600' : available < 10 ? 'text-warning-600' : 'text-success-600'}`}>
@@ -549,7 +589,7 @@ const FlightDetailPage = () => {
                       <td className="px-3 py-3" />
                       {classOptions.map(({ key, label }) => {
                         const isSelected = seatClass === key;
-                        const available = flight.seats?.[key]?.available ?? flight.seats?.[key]?.availableSeats ?? 0;
+                        const available = liveCounts?.[key] ?? flight.seats?.[key]?.available ?? 0;
                         return (
                           <td key={key} className="px-3 py-3 text-center">
                             <button
@@ -606,7 +646,7 @@ const FlightDetailPage = () => {
               {classOptions.map(({ key, label }) => {
                 const info = flight.seats?.[key] || {};
                 const price = info.price || 0;
-                const available = info.available ?? info.availableSeats ?? 0;
+                const available = liveCounts?.[key] ?? info.available ?? 0;
                 const isSelected = seatClass === key;
                 return (
                   <button

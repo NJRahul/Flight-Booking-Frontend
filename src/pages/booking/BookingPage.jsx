@@ -720,7 +720,9 @@ const BookingPage = () => {
       const booking = responseData.booking || responseData;
       const bookingId = booking._id || booking.id;
       toast.success('Booking created! Proceed to payment.');
-      navigate(`/payment/${bookingId}`);
+      navigate(`/payment/${bookingId}`, {
+        state: { clientSecret: responseData.clientSecret || '' },
+      });
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.message || 'Booking failed. Please try again.');

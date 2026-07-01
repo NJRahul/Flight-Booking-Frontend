@@ -1,58 +1,40 @@
 import { useState } from 'react';
-import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Loader2, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
 
-const CARD_ELEMENT_OPTIONS = {
-  style: {
-    base: {
-      fontSize: '16px',
-      color: '#1e293b',
-      fontFamily: 'Inter, system-ui, sans-serif',
-      '::placeholder': { color: '#94a3b8' },
-    },
-    invalid: { color: '#ef4444' },
-  },
-};
-
-const StripeCardForm = ({ bookingId, clientSecret, totalAmount }) => {
+const StripeCardForm = ({ bookingId, totalAmount }) => {
   const stripe = useStripe();
   const elements = useElements();
   const navigate = useNavigate();
-  const [cardholderName, setCardholderName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [cardError, setCardError] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!stripe || !elements || !clientSecret) return;
-    if (!cardholderName.trim()) {
-      setCardError('Please enter cardholder name');
-      return;
-    }
+    if (!stripe || !elements) return;
 
     setIsProcessing(true);
-    setCardError('');
+    setErrorMsg('');
 
     try {
-      const cardElement = elements.getElement(CardElement);
-      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: cardElement,
-          billing_details: { name: cardholderName },
+      const { error, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: `${window.location.origin}/booking/confirmation/${bookingId}`,
         },
+        redirect: 'if_required',
       });
 
       if (error) {
-        setCardError(error.message);
+        setErrorMsg(error.message || 'Payment failed.');
         setIsProcessing(false);
         return;
       }
 
-      if (paymentIntent.status === 'succeeded') {
-        // Confirm with backend
+      if (paymentIntent?.status === 'succeeded') {
         await api.post('/payments/confirm', {
           bookingId,
           paymentIntentId: paymentIntent.id,
@@ -62,7 +44,7 @@ const StripeCardForm = ({ bookingId, clientSecret, totalAmount }) => {
         navigate(`/booking/confirmation/${bookingId}`);
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Payment failed. Please try again.');
+      toast.error(err.response?.data?.error || 'Payment confirmation failed.');
       setIsProcessing(false);
     }
   };
@@ -72,40 +54,29 @@ const StripeCardForm = ({ bookingId, clientSecret, totalAmount }) => {
       {/* Test card hint */}
       {import.meta.env.DEV && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
-          <p className="font-semibold mb-1">Test Card Details</p>
+          <p className="font-semibold mb-1">Stripe Test Card</p>
           <p>Card: <span className="font-mono">4242 4242 4242 4242</span></p>
           <p>Expiry: Any future date &nbsp;·&nbsp; CVC: Any 3 digits</p>
         </div>
       )}
 
-      {/* Cardholder name */}
-      <div>
-        <label className="label-text">Cardholder Name</label>
-        <input
-          type="text"
-          className="input-field"
-          placeholder="Name as on card"
-          value={cardholderName}
-          onChange={(e) => setCardholderName(e.target.value)}
-          required
-        />
-      </div>
+      {/* Stripe PaymentElement — handles cards, wallets, and more */}
+      <PaymentElement
+        options={{
+          layout: 'tabs',
+          fields: { billingDetails: { name: 'auto' } },
+        }}
+      />
 
-      {/* Stripe CardElement */}
-      <div>
-        <label className="label-text">Card Details</label>
-        <div className="border border-gray-200 rounded-xl p-4 bg-white focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent transition-all">
-          <CardElement options={CARD_ELEMENT_OPTIONS} />
-        </div>
-        {cardError && (
-          <p className="text-xs text-danger-500 mt-1">{cardError}</p>
-        )}
-      </div>
+      {errorMsg && (
+        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {errorMsg}
+        </p>
+      )}
 
-      {/* Pay button */}
       <button
         type="submit"
-        disabled={!stripe || isProcessing || !clientSecret}
+        disabled={!stripe || isProcessing}
         className="w-full h-12 btn-primary text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isProcessing ? (

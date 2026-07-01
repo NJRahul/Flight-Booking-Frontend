@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { Shield, Lock, Loader2, ArrowLeft } from 'lucide-react';
@@ -17,6 +17,7 @@ const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
 const PaymentPage = () => {
   const { bookingId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [booking, setBooking] = useState(null);
   const [clientSecret, setClientSecret] = useState('');
@@ -42,8 +43,12 @@ const PaymentPage = () => {
         const bookingData = bookingRes.data?.data?.booking || bookingRes.data?.data;
         setBooking(bookingData);
 
-        // Create payment intent — non-fatal if Stripe not configured
-        if (stripePromise) {
+        // Prefer clientSecret passed via navigation state (already created during booking)
+        // so we avoid a redundant /create-intent call.
+        const stateSecret = location.state?.clientSecret;
+        if (stateSecret) {
+          setClientSecret(stateSecret);
+        } else if (stripePromise) {
           try {
             const intentRes = await api.post('/payments/create-intent', { bookingId });
             setClientSecret(intentRes.data?.data?.clientSecret || '');
@@ -192,10 +197,18 @@ const PaymentPage = () => {
               {/* Card tab */}
               {activeTab === 'Card' && (
                 stripePromise && clientSecret ? (
-                  <Elements stripe={stripePromise} options={{ clientSecret }}>
+                  <Elements
+                    stripe={stripePromise}
+                    options={{
+                      clientSecret,
+                      appearance: {
+                        theme: 'stripe',
+                        variables: { colorPrimary: '#2563eb', borderRadius: '12px' },
+                      },
+                    }}
+                  >
                     <StripeCardForm
                       bookingId={bookingId}
-                      clientSecret={clientSecret}
                       totalAmount={booking?.pricing?.totalAmount}
                     />
                   </Elements>

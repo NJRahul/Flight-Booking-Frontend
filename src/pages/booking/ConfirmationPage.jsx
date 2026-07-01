@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Plane, Download, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { bookingApi } from '../../api/axios';
+import api from '../../api/axios';
 
 const ConfirmationPage = () => {
   const { bookingId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,9 +20,24 @@ const ConfirmationPage = () => {
     const fetchBooking = async () => {
       try {
         setLoading(true);
-        const res = await bookingApi.get(`/${bookingId}`);
-        const bookingData = res.data?.data?.booking || res.data?.data;
-        setBooking(bookingData);
+        const sessionId = searchParams.get('session_id');
+
+        if (sessionId) {
+          // Returning from Stripe Checkout — verify and confirm the booking
+          const res = await api.get('/payments/verify-session', {
+            params: { session_id: sessionId, bookingId },
+          });
+          const bookingData = res.data?.data?.booking;
+          setBooking(bookingData);
+          if (!res.data?.data?.alreadyConfirmed) {
+            toast.success('Payment confirmed! Your booking is confirmed.');
+          }
+        } else {
+          // Direct navigation (demo payment or already confirmed)
+          const res = await bookingApi.get(`/${bookingId}`);
+          const bookingData = res.data?.data?.booking || res.data?.data;
+          setBooking(bookingData);
+        }
       } catch (err) {
         setError(err.response?.data?.error || 'Failed to load booking details');
       } finally {
